@@ -1,12 +1,14 @@
 PROJECT := vextm-source
-TARGET := $(PROJECT).dll
+DLL := $(PROJECT).dll
+INSTALLER := VEXTMOBSPluginInstaller.exe
+MAKENSIS := ../vextm/buildtools/win32/nsis/makensis
 
 SRCS = vextm-source.c \
 	   vextm-thread.c \
 	   colorbars.c
 
-OBS_SOURCE := /mnt/c/Users/Dave/git/obs-studio
-OBS_INSTALL := '/mnt/c/Program Files/obs-studio'
+OBS_SOURCE := $(HOME)/git/obs-studio
+OBS_INSTALL := "$(shell cygpath -u "$$PROGRAMFILES/obs-studio")"
 
 CC = x86_64-w64-mingw32-gcc
 STRIP = x86_64-w64-mingw32-strip
@@ -19,33 +21,29 @@ OBJS += ${SRCS:.c=.o}
 
 .PHONY: install clean all
 
-all:: $(TARGET)
+all:: $(INSTALLER)
 
-$(TARGET): $(OBJS)
+$(DLL): $(OBJS)
 	@echo "Linking $@..."
-	@$(CC) -shared $(LIBS) -o $@ $(OBJS)
+	$(CC) -shared $(LIBS) -o $@ $(OBJS)
+
+$(INSTALLER): setup.nsi $(DLL)
+	@echo ""
+	@echo "#####################################################"
+	@echo "# CREATING $@ INSTALLER EXECUTABLE..."
+	@$(STRIP) $(DLL)
+	@$(MAKENSIS) "/XOutFile $@" $< > $@.out
+	@echo "#####################################################"
+	@echo ""
 
 .c.o:
 	@echo "Compiling $<..."
 	@$(CC) -c $< -o $@ $(CFLAGS) $(CXXFLAGS) $(INCLUDES)
 
-install:: $(TARGET)
-	@echo "Installing to $(OBS_INSTALL)"
-	@cp $(TARGET) $(OBS_INSTALL)/obs-plugins/64bit/
-	@mkdir -p $(OBS_INSTALL)/data/obs-plugins/$(PROJECT)/
-	@cp -R data/* $(OBS_INSTALL)/data/obs-plugins/$(PROJECT)/
-
-zipfile:: $(TARGET)
-	@echo "Creating $(PROJECT).zip..."
-	@mkdir -p dist/obs-plugins/64bit/
-	@cp $(TARGET) dist/obs-plugins/64bit/
-	@$(STRIP) dist/obs-plugins/64bit/$(TARGET)
-	@mkdir -p dist/data/obs-plugins/$(PROJECT)/
-	@cp -R data/* dist/data/obs-plugins/$(PROJECT)/
-	@cd dist && zip -r ../$(PROJECT).zip * && cd ..
-
 clean:
-	rm -f $(TARGET)
+	rm -f $(DLL)
+	rm -f $(INSTALLER)
 	rm -f $(OBJS)
 	rm -rf dist
 	rm -f $(PROJECT).zip
+	rm -f *.out

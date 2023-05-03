@@ -18,11 +18,9 @@ Binaries for Windows 64 bit are available in the [Releases](https://gitlab.com/d
 
 First, ensure you are using the 64-bit version of OBS Studio. The 32-bit Windows version as well as macOS and Linux versions aren't supported at this time.
 
-The plugin is distributed as a ZIP file. To install, unzip the downloaded file to the OBS Studio installation directory, typically:
+The plugin is distributed as an installer executable file. To install, double-click the downloaded .exe file.
 
-> C:\Program Files\obs-studio
-
-After that, just restart OBS Studio and it should load the new plugin.
+After that, restart OBS Studio and it should load the new plugin.
 
 ## Usage
 
@@ -34,4 +32,4 @@ Plugin usage is simple. In OBS Studio, select your desired scene and then click 
 
 `Screen to show` allows you to "pin" the display source to a single display type. You might use this for example to create a source that always has the rankings available if you want to transition to that in between matches (rather than requiring the scorekeeper to do it using TM's built-in display controls). For basic usage, just leave this set to `All`.
 
-`Field Set ID` can be left at 0 if you are not using more than a single field set in Tournament Manager. If you are using more than 1 field set, you can also leave this value at 0 and then you will get a separate prompt from the TM display program asking you to choose your field set. Otherwise, you can set this value to your field set ID so that you can shut down OBS Studio and restart it without being prompted by TM. Unfortuatnely, there is currently no easy way to look up a field set ID, however in most cases the field set IDs simply start at 1 and count up from there, so finding it by trial and error shouldn't be hard.
+`Field Set ID` can be left at 0 if you are not using more than a single field set in Tournament Manager. If you are using more than 1 field set, you can also leave this value at 0 and then you will get a separate prompt from the TM display program asking you to choose your field set. Otherwise, you can set this value to your field set ID so that you can shut down OBS Studio and restart it without being prompted by TM. Unfortuatnely, there is currently no easy way to look up a field set ID, however in most cases the field set IDs just start at 1 and count up from there, so finding it by trial and error shouldn't be hard.
