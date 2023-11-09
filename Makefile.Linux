@@ -1,0 +1,52 @@
+PROJECT := vextm-source
+SHAREDOBJ := $(PROJECT).so
+
+SRCS = platform-posix.c \
+	   vextm-source.c \
+	   vextm-thread.c \
+	   colorbars.c
+
+OBS_SOURCE := $(HOME)/git/obs-studio
+
+CC = gcc
+STRIP = strip
+
+CFLAGS = -m64 -Wall -fPIC
+INCLUDES = -I/usr/include/obs
+LIBS = -L/usr/lib/x86_64-linux-gnu -static-libgcc -Wl,-Bdynamic -lobs -lpthread
+
+OBJS += ${SRCS:.c=.o}
+
+.PHONY: install clean all
+
+all:: $(SHAREDOBJ)
+
+$(SHAREDOBJ): $(OBJS)
+	@echo "Linking $@..."
+	$(CC) -shared $(LIBS) -o $@ $(OBJS)
+
+.c.o:
+	@echo "Compiling $<..."
+	@$(CC) -c $< -o $@ $(CFLAGS) $(CXXFLAGS) $(INCLUDES)
+
+install: $(SHAREDOBJ)
+	mkdir -p ~/.config/obs-studio/plugins/$(PROJECT)/bin/64bit
+	cp $(SHAREDOBJ) ~/.config/obs-studio/plugins/$(PROJECT)/bin/64bit/
+	cp -r data ~/.config/obs-studio/plugins/$(PROJECT)/
+
+zip: $(SHAREDOBJ)
+	/bin/rm -rf $(PROJECT)/
+	rm -f $(PROJECT).zip
+	mkdir -p $(PROJECT)/bin/64bit
+	cp $(SHAREDOBJ) $(PROJECT)/bin/64bit/
+	$(STRIP) $(PROJECT)/bin/64bit/$(SHAREDOBJ)
+	cp -r data $(PROJECT)/
+	zip -r $(PROJECT).zip $(PROJECT)/
+
+clean:
+	rm -f $(SHAREDOBJ)
+	rm -f $(OBJS)
+	rm -rf dist
+	rm -f *.out
+	/bin/rm -rf $(PROJECT)/
+	rm -f $(PROJECT).zip

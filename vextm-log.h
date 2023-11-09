@@ -1,5 +1,7 @@
 #pragma once
 
+#include <util/base.h>
+
 #define log(log_level, format, ...) blog(log_level, "[vextm-source] " format, ##__VA_ARGS__)
 
 #define debug(format, ...) log(LOG_DEBUG, format, ##__VA_ARGS__)

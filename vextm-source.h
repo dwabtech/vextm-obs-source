@@ -2,6 +2,7 @@
 
 #include <obs-module.h>
 #include <pthread.h>
+#include "platform.h"
 
 struct vextm_source_data {
 	obs_source_t* source;
@@ -10,5 +11,5 @@ struct vextm_source_data {
     pthread_mutex_t mutex;
     int run_thread;
     char shmem[10];
-    PROCESS_INFORMATION pi;
+    plat_pid_t pid;
 };

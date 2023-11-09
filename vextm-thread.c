@@ -3,7 +3,7 @@
 #include <obs-module.h>
 #include <util/platform.h>
 #include <pthread.h>
-#include <windows.h>
+#include "platform.h"
 #include "colorbars.h"
 #include "vextm-log.h"
 #include "vextm-source.h"
@@ -30,47 +30,29 @@ void* vextm_source_thread(void* arg) {
     obs_frame.data[0] = (uint8_t*) get_color_bar_data();
     obs_frame.linesize[0] = (FRAME_WIDTH * 4);
 
-    // Open memory-mapped file.  A file mapping with INVALID_HANDLE_VALUE uses
-    // the system paging file without writing to disk.
+    // Open memory-mapped file
     char fb_name[16];
-    snprintf(fb_name, 16, "%s-fb", context->shmem);
-    HANDLE mmap = CreateFileMapping(
-            INVALID_HANDLE_VALUE,
-            NULL,
-            PAGE_READWRITE,
-            0,
-            IMG_BUF_SIZE,
-            fb_name);
-    if (mmap == NULL) {
-        warn("CreateFileMapping failed: %ld", GetLastError());
+    snprintf(fb_name, 16, "/%s-fb", context->shmem);
+    shm_file_t fd = shm_fd_open(fb_name, IMG_BUF_SIZE);
+    if(fd == SHM_FD_INVALID) {
         pthread_exit(NULL);
     }
 
     // Obtain a pointer to memory-mapped file data
-    uint8_t* imgbuf = (uint8_t*) MapViewOfFile(mmap,
-            FILE_MAP_ALL_ACCESS,
-            0,
-            0,
-            IMG_BUF_SIZE);
+    uint8_t* imgbuf = (uint8_t*) shm_mmap(fd, IMG_BUF_SIZE);
     if(imgbuf == NULL) {
-        warn("MapViewOfFile failed: %ld", GetLastError());
-        CloseHandle(mmap);
+        shm_fd_close(fd, fb_name);
         pthread_exit(NULL);
     }
 
     // Open semaphore that will be signalled after a new frame is written to
     // shared memory
     char sem_name[16];
-    snprintf(sem_name, 16, "%s-sem", context->shmem);
-    HANDLE frame_semaphore = CreateSemaphoreA( 
-            NULL,
-            0,
-            5,
-            sem_name);
+    snprintf(sem_name, 16, "/%s-sem", context->shmem);
+    shm_sem_t frame_semaphore = shm_sem_create(sem_name);
     if(frame_semaphore == NULL) {
-        warn("CreateSemaphore failed: %ld", GetLastError());
-        UnmapViewOfFile(imgbuf);
-        CloseHandle(mmap);
+        shm_mmap_close(imgbuf, IMG_BUF_SIZE);
+        shm_fd_close(fd, fb_name);
         pthread_exit(NULL);
     }
 
@@ -83,8 +65,8 @@ void* vextm_source_thread(void* arg) {
         // available in shared memory.  Set maximum wait time so the OBS frame
         // is updated at least that often, even if we're not signalled from
         // the shared memory source.
-        DWORD wait = WaitForSingleObject(frame_semaphore, 100);
-        if(wait == WAIT_OBJECT_0) {
+        int wait = shm_sem_wait(frame_semaphore);
+        if(wait == 0) {
             frame_count++;
             idle_count = 0;
         } else {
@@ -101,7 +83,7 @@ void* vextm_source_thread(void* arg) {
         // If semaphore was signalled or we've been idle for a while, deliver
         // the frame to OBS.  The obs_frame structure already points to the
         // shared memory so no need to fill it in.
-        if((wait == WAIT_OBJECT_0) || ((idle_count % 8) == 0)) {
+        if((wait == 0) || ((idle_count % 8) == 0)) {
             obs_frame.timestamp = 0;
             obs_source_output_video(context->source, &obs_frame);
         }
@@ -110,7 +92,7 @@ void* vextm_source_thread(void* arg) {
         // drawn, then check the run_thread variable to determine if this
         // thread should terminate.  Avoid locking/unlocking every loop during
         // high frame rates.
-        if((wait != WAIT_OBJECT_0) || (frame_count >= 10)) {
+        if((wait != 0) || (frame_count >= 10)) {
             // Check for a signal to end the thread and if so break out of the
             // while loop
             int keep_running = 0;
@@ -127,9 +109,9 @@ void* vextm_source_thread(void* arg) {
 
 	info("Thread ending");
 
-    CloseHandle(frame_semaphore);
-    UnmapViewOfFile(imgbuf);
-    CloseHandle(mmap);
+    shm_sem_close(frame_semaphore, sem_name);
+    shm_mmap_close(imgbuf, IMG_BUF_SIZE);
+    shm_fd_close(fd, fb_name);
 
     pthread_exit(NULL);
 

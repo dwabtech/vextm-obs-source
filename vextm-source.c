@@ -4,13 +4,22 @@
 #include <util/dstr.h>
 #include <sys/stat.h>
 #include <pthread.h>
-#include <windows.h>
+#include "platform.h"
 #include "vextm-log.h"
 #include "vextm-thread.h"
 #include "vextm-source.h"
 
-#define DEFAULT_DISPLAY_PATH "C:\\Program Files (x86)\\VEX\\" \
-    "Tournament Manager\\Display.exe"
+#ifdef _WIN32
+char* display_cmd = "C:\\Program Files (x86)\\VEX\\Tournament Manager\\TM.exe";
+char* display_default_args[] = {"--tmdisplay"};
+#elif __linux__
+char* display_cmd = "flatpak";
+char* display_default_args[] = {"flatpak", "run", "-p", "com.dwabtech.TM", "--tmdisplay"};
+#else
+#error Unsupported platform
+#endif
+
+#define MAX_ARGS 64
 
 // Some custom screen IDs that represent combos (i.e. an instance of the
 // plugin cofigured for one of these IDs will show any of the combo screens
@@ -19,9 +28,10 @@
 #define RANKINGS_ALLIANCE_BRACKET_COMBO 1001
 
 // Static helper methods defined at the end of the file
-static char* get_dirname(char* path);
-static void start_display(struct vextm_source_data* context, char* cmd);
+static void start_display(struct vextm_source_data* context, char* args[]);
 static void stop_display(struct vextm_source_data* context);
+static void append_arg(char** args, const char* arg);
+static void free_args(char** args);
 
 // Function get_name returns the user-visible name for this input source type.
 static const char* vextm_source_get_name(void* unused) {
@@ -36,11 +46,6 @@ static obs_properties_t* vextm_source_get_properties(void* data) {
     //struct vextm_source_data* s = data;
 
     obs_properties_t* props = obs_properties_create();
-
-    // Display executable path
-    obs_properties_add_path(props, "display",
-            obs_module_text("VexTmDisplayPath"),
-            OBS_PATH_FILE, NULL, DEFAULT_DISPLAY_PATH);
 
     // Server address
     obs_properties_add_text(props, "server",
@@ -105,7 +110,6 @@ static obs_properties_t* vextm_source_get_properties(void* data) {
 // Function get_defaults configures any default values in settings that make
 // sense for the plugin.
 static void vextm_source_get_defaults(obs_data_t* settings) {
-    obs_data_set_default_string(settings, "display", DEFAULT_DISPLAY_PATH);
     obs_data_set_default_string(settings, "server", "");
     obs_data_set_default_string(settings, "password", "");
     obs_data_set_default_int(settings, "screen", 0);
@@ -125,43 +129,80 @@ static void vextm_source_update(void* data, obs_data_t* settings) {
     const char* password = (char*) obs_data_get_string(settings, "password");
     long fieldset = obs_data_get_int(settings, "fieldset");
 
-    char cmd[256];
-    snprintf(cmd, 256, "%s --shmem %s --checkversion 0 --preview 0 --kiosk 1 --overlay %d",
-            obs_data_get_string(settings, "display"),
-            context->shmem,
-            overlay);
+    char* args[MAX_ARGS];
+    memset(args, 0, sizeof(char*) * MAX_ARGS);
+
+    for(int i = 0; i < (sizeof(display_default_args) / sizeof(display_default_args[0])); i++) {
+        append_arg(args, display_default_args[i]);
+    }
+
+    append_arg(args, "--shmem");
+    append_arg(args, context->shmem);
+
+    append_arg(args, "--checkversion");
+    append_arg(args, "0");
+
+    append_arg(args, "--preview");
+    append_arg(args, "0");
+
+    append_arg(args, "--kiosk");
+    append_arg(args, "1");
+
+    append_arg(args, "--overlay");
+    if(overlay) {
+        append_arg(args, "1");
+    } else {
+        append_arg(args, "0");
+    }
 
     if(strlen(server) > 0) {
-        snprintf(cmd, 256, "%s --server %s", cmd, server);
+        append_arg(args, "--server");
+        append_arg(args, server);
     }
 
     if(strlen(password) > 0) {
-        snprintf(cmd, 256, "%s --pw %s", cmd, password);
+        append_arg(args, "--pw");
+        append_arg(args, password);
     }
 
     if(screen == INTRO_TIMER_COMBO) {
         // Special case for intro + in match
-        snprintf(cmd, 256, "%s --onlyscreen 2 --onlyscreen 3", cmd);
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "2");
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "3");
     } else if(screen == RANKINGS_ALLIANCE_BRACKET_COMBO) {
         // Special case for rankings + alliance selection + elim bracket
-        snprintf(cmd, 256, "%s --onlyscreen 5 --onlyscreen 7 " \
-                "--onlyscreen 8 --onlyscreen 13", cmd);
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "5");
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "7");
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "8");
+        append_arg(args, "--onlyscreen");
+        append_arg(args, "13");
     } else if(screen != 0) {
         // Pin to one screen only
-        snprintf(cmd, 256, "%s --onlyscreen %ld", cmd, screen);
+        char tmp[32];
+        snprintf(tmp, 32, "%ld", screen);
+        append_arg(args, "--onlyscreen");
+        append_arg(args, tmp);
     }
 
     // Field set
     if(fieldset > 0) {
-        snprintf(cmd, 256, "%s --fieldsetid %ld", cmd, fieldset);
+        char tmp[32];
+        snprintf(tmp, 32, "%ld", fieldset);
+        append_arg(args, "--fieldsetid");
+        append_arg(args, tmp);
     }
-
-    info("Starting display with command: %s", cmd);
 
     if(context->run_thread != 0) {
         stop_display(context);
     }
-    start_display(context, cmd);
+    start_display(context, args);
+
+    free_args(args);
 }
 
 // Function source_create runs once when the source instance is first created.
@@ -216,49 +257,15 @@ bool obs_module_load(void) {
     return true;
 }
 
-// Function get_dirname strips the last component off the path in order to
-// provide the directory name for the specified resource. This is a basic
-// implementation that fails to handle a number of edge cases.
-static char* get_dirname(char* path) {
-    for(int i = strlen(path) - 1; i >= 0; i--) {
-        if((path[i] == '\\') || (path[i] == '/')) {
-            path[i] = '\0';
-            return path;
-        }
-    }
-
-    snprintf(path, strlen(path), ".");
-    return path;
-}
-
 // Function start_display executes the display process and starts the
 // background thread that will manage it.
-static void start_display(struct vextm_source_data* context, char* cmd) {
-    char* dir;
-    char path[256];
-    strncpy(path, cmd, 256);
-    dir = get_dirname(path);
-
+static void start_display(struct vextm_source_data* context, char* args[]) {
     // Start the TM display process
-    context->run_thread = 1;
-    STARTUPINFO si;
-    ZeroMemory(&si, sizeof(si));
-    ZeroMemory(&(context->pi), sizeof(context->pi));
-    if(CreateProcessA(NULL,
-                cmd,
-                NULL,
-                NULL,
-                FALSE,
-                0,
-                NULL,
-                dir,
-                &si,
-                &(context->pi)) == 0) {
-        warn("CreateProcess failed: %ld", GetLastError());
-    }
+    context->pid = plat_spawn(display_cmd, args);
 
     // Init a mutex and start a background thread that will manage the display
     // process just created
+    context->run_thread = 1;
     int rc = pthread_mutex_init(&(context->mutex), NULL);
     if(rc != 0) {
         warn("Error creating mutex: %d", rc);
@@ -276,7 +283,8 @@ static void start_display(struct vextm_source_data* context, char* cmd) {
 // Function stop_display terminates the process and the background management
 // thread.
 static void stop_display(struct vextm_source_data* context) {
-    TerminateProcess(context->pi.hProcess, 0);
+    //TerminateProcess(context->pi.hProcess, 0);
+    plat_kill(context->pid);
 
     pthread_mutex_lock(&(context->mutex));
     context->run_thread = 0;
@@ -287,5 +295,23 @@ static void stop_display(struct vextm_source_data* context) {
         info("Background thread join complete");
     } else {
         warn("Error joining background thread: %d", rc);
+    }
+}
+
+static void append_arg(char** args, const char* arg) {
+    for(int i = 0; i < MAX_ARGS; i++) {
+        if(args[i] == NULL) {
+            args[i] = malloc(strlen(arg) + 1);
+            strcpy(args[i], arg);
+            return;
+        }
+    }
+}
+
+static void free_args(char** args) {
+    for(int i = 0; i < MAX_ARGS; i++) {
+        if(args[i] != NULL) {
+            free(args[i]);
+        }
     }
 }
