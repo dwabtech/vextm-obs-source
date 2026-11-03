@@ -6,40 +6,43 @@ SRCS = platform-posix.c \
 	   vextm-thread.c \
 	   colorbars.c
 
-OBS_SOURCE := $(HOME)/git/obs-studio
+OBS_SOURCE := ./obs-studio
 
 CC = gcc
 STRIP = strip
 
 CFLAGS = -m64 -Wall -fPIC
-INCLUDES = -I/usr/include/obs
+INCLUDES = -I. -I$(OBS_SOURCE)/libobs
 LIBS = -L/usr/lib/x86_64-linux-gnu -static-libgcc -Wl,-Bdynamic -lobs -lpthread
+
+XDG_DATA_HOME ?= $(HOME)/.local/share
+PLUGIN_DIR = $(XDG_DATA_HOME)/obs-studio/plugins/$(PROJECT)
 
 OBJS += ${SRCS:.c=.o}
 
-.PHONY: install clean all
+.PHONY: install clean all zip
 
-all:: $(SHAREDOBJ)
+all: $(SHAREDOBJ)
 
 $(SHAREDOBJ): $(OBJS)
 	@echo "Linking $@..."
-	$(CC) -shared $(LIBS) -o $@ $(OBJS)
+	$(CC) -shared -o $@ $(OBJS) $(LIBS)
 
 .c.o:
 	@echo "Compiling $<..."
 	@$(CC) -c $< -o $@ $(CFLAGS) $(CXXFLAGS) $(INCLUDES)
 
 install: $(SHAREDOBJ)
-	mkdir -p ~/.config/obs-studio/plugins/$(PROJECT)/bin/64bit
-	cp $(SHAREDOBJ) ~/.config/obs-studio/plugins/$(PROJECT)/bin/64bit/
-	cp -r data ~/.config/obs-studio/plugins/$(PROJECT)/
+	mkdir -p "$(PLUGIN_DIR)"
+	cp $(SHAREDOBJ) "$(PLUGIN_DIR)/"
+	cp -r data "$(PLUGIN_DIR)/"
 
 zip: $(SHAREDOBJ)
 	/bin/rm -rf $(PROJECT)/
 	rm -f $(PROJECT).zip
-	mkdir -p $(PROJECT)/bin/64bit
-	cp $(SHAREDOBJ) $(PROJECT)/bin/64bit/
-	$(STRIP) $(PROJECT)/bin/64bit/$(SHAREDOBJ)
+	mkdir -p $(PROJECT)
+	cp $(SHAREDOBJ) $(PROJECT)/
+	$(STRIP) $(PROJECT)/$(SHAREDOBJ)
 	cp -r data $(PROJECT)/
 	zip -r $(PROJECT).zip $(PROJECT)/
 

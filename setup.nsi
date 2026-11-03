@@ -68,9 +68,11 @@
 ;Languages
   !insertmacro MUI_LANGUAGE "English"
 
+!define PLUGIN_DIR "$APPDATA\obs-studio\plugins\vextm-source"
+
 Function .onInit
-    ; Check for OBS Studio install
-    IfFileExists $PROGRAMFILES64\obs-studio continueInstall 0
+    ; Check for a standard OBS Studio installation
+    IfFileExists "$PROGRAMFILES64\obs-studio\bin\64bit\obs64.exe" continueInstall 0
         MessageBox MB_ICONSTOP|MB_OK "You must install OBS Studio before installing this plugin." /SD IDOK
         Abort
 
@@ -81,13 +83,22 @@ FunctionEnd
 ;Installer Sections
 
 Section "-Base"
-  SetDetailsPrint textonly
-  DetailPrint "Installing base files..."
-  SetDetailsPrint none
+    SetShellVarContext all
 
-  ; Set path where files will be installed to
-  File "/oname=$PROGRAMFILES64\obs-studio\obs-plugins\64bit\vextm-source.dll" "vextm-source.dll"
-  CreateDirectory "$PROGRAMFILES64\obs-studio\data\obs-plugins\vextm-source"
-  SetOutPath "$PROGRAMFILES64\obs-studio\data\obs-plugins\vextm-source"
-  File /r data\*.*
+    SetDetailsPrint textonly
+    DetailPrint "Installing VEX Tournament Manager OBS Plugin..."
+
+    ; Remove the previous legacy installation
+    Delete "$PROGRAMFILES64\obs-studio\obs-plugins\64bit\vextm-source.dll"
+    RMDir /r "$PROGRAMFILES64\obs-studio\data\obs-plugins\vextm-source"
+
+    ; Install the DLL using the OBS 33 plugin layout
+    SetOutPath "${PLUGIN_DIR}"
+    File "vextm-source.dll"
+
+    ; Install plugin data files
+    SetOutPath "${PLUGIN_DIR}\data"
+    File /r "data\*.*"
+
 SectionEnd
+
